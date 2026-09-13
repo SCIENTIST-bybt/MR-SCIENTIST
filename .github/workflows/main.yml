@@ -27,23 +27,26 @@ jobs:
           Restart-Service -Name TermService -Force
           Write-Host "RDP Configured Successfully."
 
-      - name: Create RDP User with Secure Password
+      - name: Create or Update RDP User
         shell: powershell
         env:
           RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
         run: |
-          # Remove user if it already exists to avoid conflict
-          if (Get-LocalUser -Name "RDP" -ErrorAction SilentlyContinue) {
-              Remove-LocalUser -Name "RDP"
+          # Check if user exists, if not create, otherwise just update the password
+          if (-not (Get-LocalUser -Name "RDP" -ErrorAction SilentlyContinue)) {
+              net user RDP "$env:RDP_PASSWORD" /add
+          } else {
+              net user RDP "$env:RDP_PASSWORD"
           }
           
-          # Create user using net user command (more reliable for password policies)
-          net user RDP "$env:RDP_PASSWORD" /add
-          net localgroup Administrators RDP /add
-          net localgroup "Remote Desktop Users" RDP /add
+          # Add user to groups safely (SilentlyContinue prevents errors if already added)
+          Add-LocalGroupMember -Group "Administrators" -Member "RDP" -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP" -ErrorAction SilentlyContinue
           
-          Write-Host "RDP User Created Successfully."
-          echo "RDP_CREDS=User: RDP | Password: $env:RDP_PASSWORD" >> $env:GITHUB_ENV
+          Write-Host "RDP User Configured Successfully."
+          
+          # Safely write to environment variable
+          Add-Content -Path $env:GITHUB_ENV -Value "RDP_CREDS=User: RDP | Password: $env:RDP_PASSWORD"
 
       - name: Install Tailscale
         shell: powershell
@@ -57,7 +60,7 @@ jobs:
       - name: Establish Tailscale Connection
         shell: powershell
         run: |
-          # Using a FIXED hostname and ephemeral flag so old runners auto-delete
+          # Use fixed hostname and ephemeral flag
           & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-rdp-runner --ephemeral
           
           $tsIP = $null
@@ -72,8 +75,9 @@ jobs:
               Write-Error "Tailscale IP not assigned. Exiting."
               exit 1
           }
-          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+          
           Write-Host "Tailscale IP is: $tsIP"
+          Add-Content -Path $env:GITHUB_ENV -Value "TAILSCALE_IP=$tsIP"
 
       - name: Verify RDP Accessibility
         shell: powershell
@@ -99,16 +103,7 @@ jobs:
           while ($true) {
               Write-Host "[$(Get-Date)] RDP Active - Waiting for connection..."
               Start-Sleep -Seconds 300
-          }          if (-not $testResult.TcpTestSucceeded) {
-              Write-Error "TCP connection to RDP port 3389 failed"
-              exit 1
-          }
-          Write-Host "TCP connectivity successful!"
-
-      - name: Maintain Connection
-        run: |
-          Write-Host "`n=== RDP ACCESS ==="
-          Write-Host "Address: $env:TAILSCALE_IP"
+          }          Write-Host "Address: $env:TAILSCALE_IP"
           Write-Host "Username: RDP"
           Write-Host "Password: $(echo $env:RDP_CREDS)"
           Write-Host "==================`n"
