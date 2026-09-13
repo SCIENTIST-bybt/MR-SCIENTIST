@@ -32,25 +32,21 @@ jobs:
         env:
           RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
         run: |
-          # Using 'cmd /c' with 'echo Y |' to bypass the >14 character prompt and PowerShell bugs
+          # Check if user exists, if not create, otherwise just update the password
           if (-not (Get-LocalUser -Name "RDP" -ErrorAction SilentlyContinue)) {
-              $cmd = "echo Y | net user RDP `"$env:RDP_PASSWORD`" /add"
-              cmd /c $cmd
-              Write-Host "User created successfully."
+              net user RDP "$env:RDP_PASSWORD" /add
           } else {
-              $cmd = "echo Y | net user RDP `"$env:RDP_PASSWORD`""
-              cmd /c $cmd
-              Write-Host "User password updated successfully."
+              net user RDP "$env:RDP_PASSWORD"
           }
           
-          # Add user to groups safely using PowerShell's cmdlet with ErrorAction SilentlyContinue
+          # Add user to groups safely (SilentlyContinue prevents errors if already added)
           Add-LocalGroupMember -Group "Administrators" -Member "RDP" -ErrorAction SilentlyContinue
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP" -ErrorAction SilentlyContinue
           
           Write-Host "RDP User Configured Successfully."
           
           # Safely write to environment variable
-          Add-Content -Path $env:GITHUB_ENV -Value "RDP_PASSWORD=$env:RDP_PASSWORD"
+          Add-Content -Path $env:GITHUB_ENV -Value "RDP_CREDS=User: RDP | Password: $env:RDP_PASSWORD"
 
       - name: Install Tailscale
         shell: powershell
@@ -100,7 +96,7 @@ jobs:
           Write-Host "`n=== RDP ACCESS DETAILS ==="
           Write-Host "Address: $env:TAILSCALE_IP"
           Write-Host "Username: RDP"
-          Write-Host "Password: $env:RDP_PASSWORD"
+          Write-Host "Password: $env:RDP_CREDS"
           Write-Host "==========================`n"
           
           # Keep runner active for the full 6 hours
