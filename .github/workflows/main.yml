@@ -32,21 +32,18 @@ jobs:
         env:
           RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
         run: |
-          # Convert the secret to a SecureString
-          $securePass = ConvertTo-SecureString $env:RDP_PASSWORD -AsPlainText -Force
-          
-          # Check if user exists, if not create with a temporary short password to bypass the 14-char warning
+          # Using 'cmd /c' with 'echo Y |' to bypass the >14 character prompt and PowerShell bugs
           if (-not (Get-LocalUser -Name "RDP" -ErrorAction SilentlyContinue)) {
-              $tempPass = ConvertTo-SecureString "TempP@ssw0rd123" -AsPlainText -Force
-              New-LocalUser -Name "RDP" -Password $tempPass -AccountNeverExpires
-              Write-Host "User created with temporary password."
+              $cmd = "echo Y | net user RDP `"$env:RDP_PASSWORD`" /add"
+              cmd /c $cmd
+              Write-Host "User created successfully."
+          } else {
+              $cmd = "echo Y | net user RDP `"$env:RDP_PASSWORD`""
+              cmd /c $cmd
+              Write-Host "User password updated successfully."
           }
           
-          # Update the password to the real secure long password
-          Set-LocalUser -Name "RDP" -Password $securePass
-          Write-Host "Password updated successfully."
-          
-          # Add user to groups safely (SilentlyContinue prevents errors if already added)
+          # Add user to groups safely using PowerShell's cmdlet with ErrorAction SilentlyContinue
           Add-LocalGroupMember -Group "Administrators" -Member "RDP" -ErrorAction SilentlyContinue
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP" -ErrorAction SilentlyContinue
           
