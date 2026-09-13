@@ -32,13 +32,19 @@ jobs:
         env:
           RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
         run: |
-          # Check if user exists, if not create, otherwise just update the password
-          # Using 'echo Y |' to auto-confirm the >14 character password warning
+          # Convert the secret to a SecureString
+          $securePass = ConvertTo-SecureString $env:RDP_PASSWORD -AsPlainText -Force
+          
+          # Check if user exists, if not create with a temporary short password to bypass the 14-char warning
           if (-not (Get-LocalUser -Name "RDP" -ErrorAction SilentlyContinue)) {
-              echo Y | net user RDP "$env:RDP_PASSWORD" /add
-          } else {
-              echo Y | net user RDP "$env:RDP_PASSWORD"
+              $tempPass = ConvertTo-SecureString "TempP@ssw0rd123" -AsPlainText -Force
+              New-LocalUser -Name "RDP" -Password $tempPass -AccountNeverExpires
+              Write-Host "User created with temporary password."
           }
+          
+          # Update the password to the real secure long password
+          Set-LocalUser -Name "RDP" -Password $securePass
+          Write-Host "Password updated successfully."
           
           # Add user to groups safely (SilentlyContinue prevents errors if already added)
           Add-LocalGroupMember -Group "Administrators" -Member "RDP" -ErrorAction SilentlyContinue
@@ -103,8 +109,5 @@ jobs:
           # Keep runner active for the full 6 hours
           while ($true) {
               Write-Host "[$(Get-Date)] RDP Active - Waiting for connection..."
-              Start-Sleep -Seconds 300
-          }          while ($true) {
-              Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
               Start-Sleep -Seconds 300
           }
